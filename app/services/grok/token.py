@@ -178,7 +178,8 @@ class GrokTokenManager:
                 "lastFailureTime": None,
                 "lastFailureReason": None,
                 "tags": [],
-                "note": ""
+                "note": "",
+                "proxy_url": ""  # Token 专属代理，为空时使用全局代理
             }
             count += 1
 
@@ -213,11 +214,49 @@ class GrokTokenManager:
         """更新Token备注"""
         if token not in self.token_data[token_type.value]:
             raise GrokApiException("Token不存在", "TOKEN_NOT_FOUND", {"token": token[:10]})
-        
+
         self.token_data[token_type.value][token]["note"] = note.strip()
         self._mark_dirty()  # 批量保存
         logger.info(f"[Token] 更新备注: {token[:10]}...")
-    
+
+    async def update_token_proxy(self, token: str, token_type: TokenType, proxy_url: str) -> None:
+        """更新Token专属代理"""
+        if token not in self.token_data[token_type.value]:
+            raise GrokApiException("Token不存在", "TOKEN_NOT_FOUND", {"token": token[:10]})
+
+        # 标准化代理 URL
+        normalized_proxy = self._normalize_proxy(proxy_url.strip())
+        self.token_data[token_type.value][token]["proxy_url"] = normalized_proxy
+        self._mark_dirty()  # 批量保存
+        logger.info(f"[Token] 更新代理: {token[:10]}... -> {normalized_proxy or '(使用全局代理)'}")
+
+    @staticmethod
+    def _normalize_proxy(proxy: str) -> str:
+        """标准化代理URL（sock5/socks5 → socks5h://）"""
+        if not proxy:
+            return proxy
+        proxy = proxy.strip()
+        if proxy.startswith("sock5h://"):
+            proxy = proxy.replace("sock5h://", "socks5h://", 1)
+        if proxy.startswith("sock5://"):
+            proxy = proxy.replace("sock5://", "socks5://", 1)
+        if proxy.startswith("socks5://"):
+            return proxy.replace("socks5://", "socks5h://", 1)
+        return proxy
+
+    def get_token_proxy(self, auth_token: str) -> str:
+        """获取Token专属代理（为空则返回空字符串，由调用方决定是否使用全局代理）"""
+        sso = self._extract_sso(auth_token)
+        if not sso:
+            return ""
+
+        _, data = self._find_token(sso)
+        if not data:
+            return ""
+
+        proxy_url = data.get("proxy_url", "")
+        return self._normalize_proxy(proxy_url) if proxy_url else ""
+
     def get_tokens(self) -> Dict[str, Any]:
         """获取所有Token"""
         return self.token_data.copy()

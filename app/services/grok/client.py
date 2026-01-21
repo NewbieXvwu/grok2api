@@ -214,17 +214,24 @@ class GrokClient:
                         ref_id = post_id or (file_attachments[0] if file_attachments else "")
                         if ref_id:
                             headers["Referer"] = f"https://grok.com/imagine/{ref_id}"
-                    
-                    # 异步获取代理
+
+                    # 获取代理：优先使用 Token 专属代理，否则使用全局代理
                     from app.core.proxy_pool import proxy_pool
-                    
-                    # 如果是403重试且使用代理池，强制刷新代理
+
+                    # 如果是403重试且使用代理池，强制刷新代理（仅对全局代理池生效）
                     if retry_403_count > 0 and proxy_pool._enabled:
                         logger.info(f"[Client] 403重试 {retry_403_count}/{max_403_retries}，刷新代理...")
                         proxy = await proxy_pool.force_refresh()
                     else:
-                        proxy = await setting.get_proxy_async("service")
-                    
+                        # 优先使用 Token 专属代理
+                        token_proxy = token_manager.get_token_proxy(token)
+                        if token_proxy:
+                            proxy = token_proxy
+                            logger.debug(f"[Client] 使用Token专属代理: {token_proxy[:30]}...")
+                        else:
+                            # Token 没有专属代理，使用全局代理
+                            proxy = await setting.get_proxy_async("service")
+
                     proxies = {"http": proxy, "https": proxy} if proxy else None
                     
                     # 执行请求

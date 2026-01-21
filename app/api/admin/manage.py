@@ -61,6 +61,7 @@ class TokenInfo(BaseModel):
     status: str
     tags: List[str] = []
     note: str = ""
+    proxy_url: str = ""  # Token 专属代理
 
 
 class TokenListResponse(BaseModel):
@@ -84,6 +85,12 @@ class UpdateTokenNoteRequest(BaseModel):
     token: str
     token_type: str
     note: str
+
+
+class UpdateTokenProxyRequest(BaseModel):
+    token: str
+    token_type: str
+    proxy_url: str
 
 
 class TestTokenRequest(BaseModel):
@@ -277,7 +284,8 @@ async def list_tokens(_: bool = Depends(verify_admin_session)) -> TokenListRespo
                 heavy_remaining_queries=data.get("heavyremainingQueries", -1),
                 status=get_token_status(data, "sso"),
                 tags=data.get("tags", []),
-                note=data.get("note", "")
+                note=data.get("note", ""),
+                proxy_url=data.get("proxy_url", "")
             ))
 
         # Super Token
@@ -290,7 +298,8 @@ async def list_tokens(_: bool = Depends(verify_admin_session)) -> TokenListRespo
                 heavy_remaining_queries=data.get("heavyremainingQueries", -1),
                 status=get_token_status(data, "ssoSuper"),
                 tags=data.get("tags", []),
-                note=data.get("note", "")
+                note=data.get("note", ""),
+                proxy_url=data.get("proxy_url", "")
             ))
 
         logger.debug(f"[Admin] Token列表获取成功: {len(token_list)}个")
@@ -620,3 +629,22 @@ async def test_token(request: TestTokenRequest, _: bool = Depends(verify_admin_s
     except Exception as e:
         logger.error(f"[Admin] Token测试异常: {e}")
         raise HTTPException(status_code=500, detail={"error": f"测试失败: {e}", "code": "TEST_TOKEN_ERROR"})
+
+
+@router.post("/api/tokens/proxy")
+async def update_token_proxy(request: UpdateTokenProxyRequest, _: bool = Depends(verify_admin_session)) -> Dict[str, Any]:
+    """更新Token专属代理"""
+    try:
+        logger.debug(f"[Admin] 更新Token代理: {request.token[:10]}...")
+
+        token_type = validate_token_type(request.token_type)
+        await token_manager.update_token_proxy(request.token, token_type, request.proxy_url)
+
+        logger.debug(f"[Admin] Token代理更新成功: {request.token[:10]}...")
+        return {"success": True, "message": "代理更新成功", "proxy_url": request.proxy_url}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Admin] Token代理更新异常: {e}")
+        raise HTTPException(status_code=500, detail={"error": f"更新失败: {e}", "code": "UPDATE_PROXY_ERROR"})
